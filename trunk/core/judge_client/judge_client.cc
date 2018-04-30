@@ -49,7 +49,7 @@
 #include <assert.h>
 #include "okcalls.h"
 
-#define STD_MB 1048576
+#define STD_MB 1048576LL
 #define STD_T_LIM 2
 #define STD_F_LIM (STD_MB<<5)
 #define STD_M_LIM (STD_MB<<7)
@@ -157,8 +157,10 @@ long get_file_size(const char * filename) {
 	return (long) f_stat.st_size;
 }
 
-void write_log(const char *fmt, ...) {
+void write_log(const char *_fmt, ...) {
 	va_list ap;
+	char fmt[4096];
+	strncpy(fmt,_fmt,4096);
 	char buffer[4096];
 	//      time_t          t = time(NULL);
 	//int l;
@@ -168,7 +170,7 @@ void write_log(const char *fmt, ...) {
 		fprintf(stderr, "openfile error!\n");
 		system("pwd");
 	}
-	va_start(ap, fmt);
+	va_start(ap, _fmt);
 	//l = 
 	vsprintf(buffer, fmt, ap);
 	fprintf(fp, "%s\n", buffer);
@@ -193,7 +195,8 @@ int execute_cmd(const char * fmt, ...) {
 }
 
 const int call_array_size = 512;
-int call_counter[call_array_size] = { 0 };
+unsigned int call_id=0;
+unsigned int call_counter[call_array_size] = { 0 };
 static char LANG_NAME[BUFFER_SIZE];
 void init_syscalls_limits(int lang) {
 	int i;
@@ -976,17 +979,24 @@ int compile(int lang,char * work_dir) {
 	pid = fork();
 	if (pid == 0) {
 		struct rlimit LIM;
-		LIM.rlim_max = 6;
-		LIM.rlim_cur = 6;
+		int cpu=6;
+		if (lang==3) cpu=30;
+		LIM.rlim_max = cpu;
+		LIM.rlim_cur = cpu;
 		setrlimit(RLIMIT_CPU, &LIM);
-		alarm(6);
-		LIM.rlim_max = 10 * STD_MB;
-		LIM.rlim_cur = 10 * STD_MB;
+		alarm(cpu);
+		LIM.rlim_max = 40 * STD_MB;
+		LIM.rlim_cur = 40 * STD_MB;
 		setrlimit(RLIMIT_FSIZE, &LIM);
 
 		if(lang==3||lang==17){
+#ifdef __i386
 		   LIM.rlim_max = STD_MB <<11;
 		   LIM.rlim_cur = STD_MB <<11;	
+#else
+		   LIM.rlim_max = STD_MB <<12;
+		   LIM.rlim_cur = STD_MB <<12;	
+#endif
                 }else{
 		   LIM.rlim_max = STD_MB *512 ;
 		   LIM.rlim_cur = STD_MB *512 ;
@@ -2015,7 +2025,7 @@ void watch_solution(pid_t pidApp, char * infile, int & ACflg, int isspj,
 		int & topmemory, int mem_lmt, int & usedtime, int time_lmt, int & p_id,
 		int & PEflg, char * work_dir) {
 	// parent
-	int tempmemory;
+	int tempmemory=0;
 
 	if (DEBUG)
 		printf("pid=%d judging %s\n", pidApp, infile);
@@ -2024,8 +2034,6 @@ void watch_solution(pid_t pidApp, char * infile, int & ACflg, int isspj,
 	struct user_regs_struct reg;
 	struct rusage ruse;
 	int first = true;
-	if(topmemory==0) 
-			topmemory= get_proc_status(pidApp, "VmRSS:") << 10;
 	while (1) {
 		// check the usage
 
@@ -2033,7 +2041,7 @@ void watch_solution(pid_t pidApp, char * infile, int & ACflg, int isspj,
 		if(first){ // 
 			ptrace(PTRACE_SETOPTIONS, pidApp, NULL, PTRACE_O_TRACESYSGOOD 
 								|PTRACE_O_TRACEEXIT 
-								|PTRACE_O_EXITKILL 
+							//	|PTRACE_O_EXITKILL 
 							//	|PTRACE_O_TRACECLONE 
 							//	|PTRACE_O_TRACEFORK 
 							//	|PTRACE_O_TRACEVFORK
@@ -2156,21 +2164,22 @@ void watch_solution(pid_t pidApp, char * infile, int & ACflg, int isspj,
 
 		// check the system calls
 		ptrace(PTRACE_GETREGS, pidApp, NULL, &reg);
-		if (call_counter[reg.REG_SYSCALL] ){
+		call_id=(unsigned int)reg.REG_SYSCALL % call_array_size;
+		if (call_counter[call_id] ){
 			//call_counter[reg.REG_SYSCALL]--;
 		}else if (record_call) {
-			call_counter[reg.REG_SYSCALL] = 1;
+			call_counter[call_id] = 1;
 		
 		}else { //do not limit JVM syscall for using different JVM
 			ACflg = OJ_RE;
 			char error[BUFFER_SIZE];
 			sprintf(error,
-                                        "[ERROR] A Not allowed system call: runid:%d CALLID:%ld\n"
+                                        "[ERROR] A Not allowed system call: runid:%d CALLID:%u\n"
                                         " TO FIX THIS , ask admin to add the CALLID into corresponding LANG_XXV[] located at okcalls32/64.h ,\n"
                                         "and recompile judge_client. \n"
                                         "if you are admin and you don't know what to do ,\n"
                                         "chinese explaination can be found on https://zhuanlan.zhihu.com/p/24498599\n",
-                                        solution_id, (long)reg.REG_SYSCALL);
+                                        solution_id, call_id);
  
 			write_log(error);
 			print_runtimeerror(error);
@@ -2521,7 +2530,7 @@ int main(int argc, char** argv) {
 					p_id, PEflg, work_dir);
 
 		}
-		if (ACflg == OJ_TL) {
+		if (finalACflg == OJ_TL) {
 			usedtime = time_lmt * 1000;
 		}
 		if (ACflg == OJ_RE) {
@@ -2601,7 +2610,7 @@ int main(int argc, char** argv) {
 	if (use_max_time) {
 		usedtime = max_case_time;
 	}
-	if (finalACflg == OJ_TL) {
+	if (finalACflg == OJ_TL ) {
 		usedtime = time_lmt * 1000;
 		if (DEBUG)
                         printf("usedtime:%d\n",usedtime);

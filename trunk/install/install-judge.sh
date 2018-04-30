@@ -1,4 +1,15 @@
 #!/bin/bash
+# usage : sudo ./install-judge.sh <ojurl> <judger_name> <judger_password> <localpath>
+# example : 
+# step 0: registe a new user name judger1 on OJ web (http://10.1.2.100/) ,password :judg3r_p@ss
+# step 1: add http_judge privilege to judger1
+# step 2: install a new ubuntu on another node in same LAN , and open a new console to execute step 3
+# step 3: sudo ./install-judge.sh http://10.1.2.100/ judger1 judg3r_p@ss /home/judge/
+if [ $# != 4 ] ; then 
+	head -7 $0
+	exit 1; 
+fi 
+
 URL=$1
 USER=$2
 PASSWORD=$3
@@ -29,7 +40,7 @@ sed -i "s|OJ_HTTP_BASEURL=http://127.0.0.1/JudgeOnline|OJ_HTTP_BASEURL=$URL|g" e
 sed -i "s/OJ_HTTP_USERNAME=IP/OJ_HTTP_USERNAME=$USER/g" etc/judge.conf
 sed -i "s/OJ_HTTP_PASSWORD=admin/OJ_HTTP_PASSWORD=$PASSWORD/g" etc/judge.conf
 sed -i "s/OJ_RUNNING=1/OJ_RUNNING=$CPU/g" etc/judge.conf
-COMPENSATION=`grep 'mips' /proc/cpuinfo|awk -F: '{printf("%.2f",$2/4000)}'`
+COMPENSATION=`grep 'mips' /proc/cpuinfo|awk -F: '{printf("%.2f",$2/5000)}'`
 sed -i "s/OJ_CPU_COMPENSATION=1.0/OJ_CPU_COMPENSATION=$COMPENSATION/g" etc/judge.conf
 cd src/core
 chmod +x ./make.sh
